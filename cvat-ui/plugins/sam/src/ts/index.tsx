@@ -80,6 +80,16 @@ function optTranslatePrompts(points: number[][], roi?: ROI): number[][] {
     return roi ? points.map((point) => [point[0] - roi[0], point[1] - roi[1]]) : points;
 }
 
+const SUPPORTED_SAM_MODELS = [
+    'pth-facebookresearch-sam-vit-h',
+    'pth-facebookresearch-sam-vit-b',
+    'pth-facebookresearch-sam-vit-l',
+];
+
+function isSAMModel(model: MLModel): boolean {
+    return SUPPORTED_SAM_MODELS.includes(model.id) || model.id.startsWith('pth-facebookresearch-sam');
+}
+
 function getModelScale(w: number, h: number): number {
     // Input images to SAM must be resized so the longest side is 1024
     const LONG_SIDE_LENGTH = 1024;
@@ -158,7 +168,7 @@ const samPlugin: SAMPlugin = {
                             }
                         }
 
-                        if (model.id === plugin.data.modelID) {
+                        if (isSAMModel(model)) {
                             if (!plugin.data.initialized) {
                                 samPlugin.data.worker.postMessage({
                                     action: WorkerAction.INIT,
@@ -209,7 +219,7 @@ const samPlugin: SAMPlugin = {
                     bounds: [number, number, number, number];
                 } | unknown> {
                     return new Promise((resolve, reject) => {
-                        if (model.id !== plugin.data.modelID) {
+                        if (!isSAMModel(model)) {
                             resolve(result);
                             return;
                         }
