@@ -7,13 +7,14 @@ import shutil
 from collections.abc import Callable
 from glob import glob
 
-from datumaro.components.annotation import AnnotationType
+from datumaro.components.annotation import AnnotationType, Bbox
 from datumaro.components.dataset import StreamDataset
 from datumaro.components.dataset_base import DatasetItem
 
 from cvat.apps.dataset_manager.bindings import (
     CommonData,
     CVATDataExtractorMixin,
+    CvatDataExtractor,
     GetCVATDataExtractor,
     ProjectData,
     detect_dataset,
@@ -27,6 +28,29 @@ from .registry import dm_env, exporter, importer
 from .transformations import EllipsesToMasks, SetKeyframeForEveryTrackShape
 
 
+def _convert_segmentations_to_bboxes(annotations):
+    converted = []
+    for annotation in annotations:
+        if annotation.type in {AnnotationType.mask, AnnotationType.polygon}:
+            annotation = Bbox(
+                *annotation.get_bbox(),
+                id=annotation.id,
+                label=annotation.label,
+                attributes=annotation.attributes,
+                group=annotation.group,
+                z_order=annotation.z_order,
+            )
+        converted.append(annotation)
+
+    return converted
+
+
+class _YoloDetectionDataExtractor(CvatDataExtractor):
+    def _read_cvat_anno(self, cvat_frame_anno, labels):
+        annotations = super()._read_cvat_anno(cvat_frame_anno, labels)
+        return _convert_segmentations_to_bboxes(annotations)
+
+
 def _export_common(
     dst_file: str,
     temp_dir: str,
@@ -34,9 +58,15 @@ def _export_common(
     format_name: str,
     *,
     save_images: bool = False,
+    convert_segmentations_to_bboxes: bool = False,
     **kwargs,
 ):
-    with GetCVATDataExtractor(instance_data, include_images=save_images) as extractor:
+    extractor_class = (
+        _YoloDetectionDataExtractor
+        if convert_segmentations_to_bboxes
+        else GetCVATDataExtractor
+    )
+    with extractor_class(instance_data, include_images=save_images) as extractor:
         dataset = StreamDataset.from_extractors(extractor, env=dm_env)
         dataset.export(temp_dir, format_name, save_media=save_images, **kwargs)
 
@@ -45,7 +75,9 @@ def _export_common(
 
 @exporter(name="YOLO", ext="ZIP", version="1.1")
 def _export_yolo(*args, **kwargs):
-    _export_common(*args, format_name="yolo", **kwargs)
+    _export_common(
+        *args, format_name="yolo", convert_segmentations_to_bboxes=True, **kwargs
+    )
 
 
 def _import_common(
@@ -98,12 +130,23 @@ def _import_yolo(*args, **kwargs):
 
 @exporter(name="Ultralytics YOLO Detection", ext="ZIP", version="1.0")
 def _export_yolo_ultralytics_detection(*args, **kwargs):
-    _export_common(*args, format_name="yolo_ultralytics_detection", **kwargs)
+    _export_common(
+        *args,
+        format_name="yolo_ultralytics_detection",
+        convert_segmentations_to_bboxes=True,
+        **kwargs,
+    )
 
 
 @exporter(name="Ultralytics YOLO Detection Track", ext="ZIP", version="1.0")
 def _export_yolo_ultralytics_detection_track(*args, **kwargs):
-    _export_common(*args, format_name="yolo_ultralytics_detection", write_track_id=True, **kwargs)
+    _export_common(
+        *args,
+        format_name="yolo_ultralytics_detection",
+        convert_segmentations_to_bboxes=True,
+        write_track_id=True,
+        **kwargs,
+    )
 
 
 @exporter(name="Ultralytics YOLO Oriented Bounding Boxes", ext="ZIP", version="1.0")
