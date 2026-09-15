@@ -146,15 +146,24 @@ class LambdaGateway:
         )
 
     def _invoke_directly(self, func, payload):
-        # host.docker.internal for Linux will work only with Docker 20.10+
         NUCLIO_TIMEOUT = settings.NUCLIO["DEFAULT_TIMEOUT"]
         if os.path.exists("/.dockerenv"):  # inside a docker container
-            url = f"http://host.docker.internal:{func.port}"
+            urls = [
+                f"http://nuclio-{settings.NUCLIO['FUNCTION_NAMESPACE']}-{func.id}:8080",
+                f"http://host.docker.internal:{func.port}",
+            ]
         else:
-            url = f"http://localhost:{func.port}"
+            urls = [f"http://localhost:{func.port}"]
 
         with make_requests_session() as session:
-            reply = session.post(url, timeout=NUCLIO_TIMEOUT, json=payload)
+            for url in urls:
+                try:
+                    reply = session.post(url, timeout=NUCLIO_TIMEOUT, json=payload)
+                    break
+                except requests.ConnectionError:
+                    if url == urls[-1]:
+                        raise
+
             reply.raise_for_status()
             response = reply.json()
 
