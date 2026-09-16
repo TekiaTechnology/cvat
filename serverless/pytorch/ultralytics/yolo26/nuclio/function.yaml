@@ -1,0 +1,53 @@
+metadata:
+  name: pth-ultralytics-custom-yolo26
+  namespace: nuclio
+  annotations:
+    name: Custom YOLO26
+    type: detector
+    spec: '[{"id": 0, "name": "headless_shrimp", "type": "rectangle"}]'
+
+spec:
+  description: Custom Ultralytics YOLO26 detector
+  runtime: python:3.10
+  handler: main:handler
+  eventTimeout: 120s
+
+  env:
+    - name: PYTHONPATH
+      value: /opt/nuclio
+    - name: YOLO_CONFIG_DIR
+      value: /tmp/ultralytics
+
+  build:
+    image: cvat.pth.ultralytics.custom_yolo26
+    baseImage: ubuntu:22.04
+
+    directives:
+      preCopy:
+        - kind: ENV
+          value: DEBIAN_FRONTEND=noninteractive
+        - kind: WORKDIR
+          value: /opt/nuclio
+        - kind: RUN
+          value: >-
+            apt-get update &&
+            apt-get install --no-install-recommends -y python3 python3-pip python-is-python3
+            libgl1 libglib2.0-0 &&
+            rm -rf /var/lib/apt/lists/*
+        - kind: RUN
+          value: pip install ultralytics==8.4.14 pyyaml --no-cache-dir
+
+  triggers:
+    myHttpTrigger:
+      numWorkers: 1
+      kind: http
+      workerAvailabilityTimeoutMilliseconds: 10000
+      attributes:
+        maxRequestBodySize: 33554432
+
+  platform:
+    attributes:
+      restartPolicy:
+        name: always
+        maximumRetryCount: 3
+      mountMode: volume
